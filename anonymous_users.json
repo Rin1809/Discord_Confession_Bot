@@ -81,5 +81,11 @@
         "users": {},
         "counter": 1,
         "last_prompt_message_id": 1387042909790011422
+    },
+    "1387044103761694801": {
+        "op_user_id": 873576591693873252,
+        "users": {},
+        "counter": 1,
+        "last_prompt_message_id": 1387044109952352287
     }
 }

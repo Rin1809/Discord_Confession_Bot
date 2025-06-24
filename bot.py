@@ -220,7 +220,7 @@ class ConfessionModal(ui.Modal, title='Gửi Confession của bạn'):
 
         try:
             prompt = (
-                "Định dạng văn bản sau bằng markdown (quan trọng, luôn luôn phải có), chỉnh sửa bố cục"
+                "Định dạng văn bản sau bằng markdown (quan trọng, luôn luôn phải có. in nghiên, in đậm, v.v... các xuống hàng, phân tách nội dung v.v....), chỉnh sửa bố cục"
                 "LƯU Ý: không được thêm thắt nội dung, chỉ cần viết lại với định dạng markdow, chỉnh sửa bố cục đẹp mắt dễ đọc và chuyên nghiệp một cách phù hợp với nội dung."
                 "Giữ nguyên ngôn ngữ gốc. Không thêm bình luận cá nhân của bạn vào output. "
                 f"Văn bản: \"{original_content}\""
