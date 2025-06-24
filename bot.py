@@ -40,7 +40,7 @@ if not GEMINI_API_KEY:
     exit()
 
 genai.configure(api_key=GEMINI_API_KEY)
-gemini_model = genai.GenerativeModel('gemini-1.5-flash')
+gemini_model = genai.GenerativeModel('gemini-2.5-flash')
 
 config = load_json_data('config.json')
 
@@ -220,8 +220,8 @@ class ConfessionModal(ui.Modal, title='Gửi Confession của bạn'):
 
         try:
             prompt = (
-                "Định dạng văn bản sau bằng markdown"
-                "LƯU Ý: không được thêm thắt nội dung, chỉ cần viết lại với định dạng markdown đẹp mắt dễ đọc phù hợp với nội dung."
+                "Định dạng văn bản sau bằng markdown (quan trọng, luôn luôn phải có), chỉnh sửa bố cục"
+                "LƯU Ý: không được thêm thắt nội dung, chỉ cần viết lại với định dạng markdow, chỉnh sửa bố cục đẹp mắt dễ đọc và chuyên nghiệp một cách phù hợp với nội dung."
                 "Giữ nguyên ngôn ngữ gốc. Không thêm bình luận cá nhân của bạn vào output. "
                 f"Văn bản: \"{original_content}\""
             )
@@ -247,7 +247,7 @@ class ConfessionModal(ui.Modal, title='Gửi Confession của bạn'):
         embed = discord.Embed(title=user_title if user_title else None, description=final_description, color=discord.Color.from_rgb(255, 182, 193))
         author_name = f"Confession #{current_cfs_number} • {timestamp_str}"
         embed.set_author(name=author_name, icon_url=guild_icon_url)
-        footer_text = "Nhấn nút 'Trả lời ẩn danh' bên dưới để tham gia thảo luận!"
+        footer_text = "Được gửi ẩn danh bởi Yumemi-chan"
         bot_avatar_url = client.user.display_avatar.url
         embed.set_footer(text=footer_text, icon_url=bot_avatar_url)
         
@@ -264,10 +264,10 @@ class ConfessionModal(ui.Modal, title='Gửi Confession của bạn'):
 
         try:
             sent_message = await self.target_channel.send(embed=embed, file=file_to_send)
-            new_thread = await sent_message.create_thread(name=f"Thảo luận CFS #{current_cfs_number}", auto_archive_duration=10080)
+            new_thread = await sent_message.create_thread(name=f"Trả lời, tham gia thảo luận CFS #{current_cfs_number} tại đây", auto_archive_duration=10080)
             
             prompt_msg = await new_thread.send(
-                "Chào mừng đến với buổi thảo luận ẩn danh! Nhấn nút bên dưới hoặc trả lời trực tiếp một tin nhắn. 👇", 
+                "Nhấn nút bên dưới nếu muốn trả lời ẩn danh👇", 
                 view=PersistentReplyView()
             )
 
