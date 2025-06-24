@@ -1,3 +1,5 @@
-moitruongao/
+# .gitignore
 .env
-config.json
+moitruongao/
+__pycache__/
+*.pyc

@@ -1,37 +1,189 @@
+# -*- coding: utf-8 -*-
 import discord
 import os
 import json
 from discord import app_commands, ui
+from dotenv import load_dotenv
+import google.generativeai as genai
+from datetime import datetime
+import zoneinfo
 
-# --- ham xu ly ---
+load_dotenv()
 
-def load_config():
-    # load file config
-    if not os.path.exists('config.json'):
-        print("Loi: File config.json khong ton tai. Vui long tao file.")
-        return None
-    with open('config.json', 'r') as f:
-        return json.load(f)
+ANON_USERS_FILE = 'anonymous_users.json'
+
+PREDEFINED_COLORS = [
+    0x3498db, 0x2ecc71, 0xf1c40f, 0xe91e63, 0x9b59b6,
+    0x1abc9c, 0xf39c12, 0x34495e, 0xad1457, 0x607d8b
+]
+
+def load_json_data(filepath):
+    if not os.path.exists(filepath):
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump({}, f)
+        return {}
+    try:
+        with open(filepath, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except (json.JSONDecodeError, FileNotFoundError):
+        return {}
+
+def save_json_data(filepath, data):
+    with open(filepath, 'w', encoding='utf-8') as f:
+        json.dump(data, f, indent=4)
+
+anon_users_data = load_json_data(ANON_USERS_FILE)
+
+GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
+if not GEMINI_API_KEY:
+    print("Loi: Vui long them GEMINI_API_KEY vao file .env.")
+    exit()
+
+genai.configure(api_key=GEMINI_API_KEY)
+gemini_model = genai.GenerativeModel('gemini-1.5-flash')
+
+config = load_json_data('config.json')
 
 def load_counter(path):
-    # load so dem tu file
     try:
-        with open(path, 'r') as f:
-            return int(f.read())
+        with open(path, 'r', encoding='utf-8') as f: return int(f.read())
     except (FileNotFoundError, ValueError):
-        # neu file k ton tai hoac rong, tao moi
-        with open(path, 'w') as f:
-            f.write('1')
+        with open(path, 'w', encoding='utf-8') as f: f.write('1')
         return 1
 
 def save_counter(path, value):
-    # luu so dem
-    with open(path, 'w') as f:
-        f.write(str(value))
+    with open(path, 'w', encoding='utf-8') as f: f.write(str(value))
 
-# --- khoi tao bot ---
 
-config = load_config()
+def get_anonymous_identity(user_id_str: str, thread_data: dict):
+    if user_id_str == str(thread_data["op_user_id"]):
+        return "Chủ thớt (OP)", discord.Color.gold()
+    
+    if user_id_str in thread_data["users"]:
+        user_data = thread_data["users"][user_id_str]
+        return user_data["id"], discord.Color(user_data["color"])
+    
+    new_anon_number = thread_data.get("counter", 1)
+    anon_name = f"Người lạ #{new_anon_number}"
+    color_value = PREDEFINED_COLORS[(new_anon_number - 1) % len(PREDEFINED_COLORS)]
+    
+    thread_data["users"][user_id_str] = {"id": anon_name, "color": color_value}
+    thread_data["counter"] = new_anon_number + 1
+    
+    return anon_name, discord.Color(color_value)
+
+async def update_sticky_prompt(thread: discord.Thread, all_data: dict):
+    thread_id_str = str(thread.id)
+
+    if thread_id_str not in all_data:
+        return
+
+    old_prompt_id = all_data[thread_id_str].get("last_prompt_message_id")
+    if old_prompt_id:
+        try:
+            old_prompt_msg = await thread.fetch_message(old_prompt_id)
+            await old_prompt_msg.delete()
+        except (discord.NotFound, discord.Forbidden):
+            pass
+
+    new_prompt_msg = await thread.send(
+        "Nhấn nút bên dưới nếu muốn trả lời ẩn danh.👇",
+        view=PersistentReplyView()
+    )
+    all_data[thread_id_str]["last_prompt_message_id"] = new_prompt_msg.id
+
+
+class DirectReplyModal(ui.Modal, title='Trả lời trực tiếp'):
+    reply_content = ui.TextInput(label='Nội dung trả lời', style=discord.TextStyle.long, required=True, max_length=2000)
+
+    def __init__(self, target_message: discord.Message):
+        super().__init__()
+        self.target_message = target_message
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+
+        current_anon_data = load_json_data(ANON_USERS_FILE)
+        thread_id_str = str(interaction.channel.id)
+        user_id_str = str(interaction.user.id)
+        
+        if thread_id_str not in current_anon_data: return
+
+        thread_data = current_anon_data[thread_id_str]
+        anon_name, anon_color = get_anonymous_identity(user_id_str, thread_data)
+        
+        # xu ly quote
+        replied_embed = self.target_message.embeds[0]
+        replied_author = replied_embed.author.name or "ẩn danh"
+        full_description = replied_embed.description
+        
+        if '\n\n' in full_description and full_description.startswith('>'):
+            content_part = full_description.split('\n\n', 1)[1]
+        else:
+            content_part = full_description
+            
+        quote = content_part.split('\n')[0]
+        if len(quote) > 70: quote = quote[:70] + "..."
+        
+        description = f"> **Trả lời {replied_author}**: *{quote}*\n\n{self.reply_content.value}"
+
+        embed = discord.Embed(
+            description=description, color=anon_color, 
+            timestamp=datetime.now(zoneinfo.ZoneInfo("Asia/Ho_Chi_Minh"))
+        )
+        embed.set_author(name=anon_name)
+        
+        await interaction.channel.send(embed=embed, view=AnonMessageView())
+        
+        await update_sticky_prompt(interaction.channel, current_anon_data)
+
+        save_json_data(ANON_USERS_FILE, current_anon_data)
+        await interaction.followup.send('Đã gửi trả lời của bạn!', ephemeral=True)
+
+class AnonMessageView(ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @ui.button(label='Trả lời', style=discord.ButtonStyle.secondary, custom_id='direct_reply_button')
+    async def direct_reply(self, interaction: discord.Interaction, button: ui.Button):
+        await interaction.response.send_modal(DirectReplyModal(target_message=interaction.message))
+
+class GeneralReplyModal(ui.Modal, title='Trả lời ẩn danh'):
+    reply_content = ui.TextInput(label='Nội dung trả lời', style=discord.TextStyle.long, required=True, max_length=2000)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        
+        current_anon_data = load_json_data(ANON_USERS_FILE)
+        thread_id_str = str(interaction.channel.id)
+        user_id_str = str(interaction.user.id)
+        
+        if thread_id_str not in current_anon_data: return
+
+        thread_data = current_anon_data[thread_id_str]
+        anon_name, anon_color = get_anonymous_identity(user_id_str, thread_data)
+
+        embed = discord.Embed(
+            description=self.reply_content.value, color=anon_color,
+            timestamp=datetime.now(zoneinfo.ZoneInfo("Asia/Ho_Chi_Minh"))
+        )
+        embed.set_author(name=anon_name)
+
+        await interaction.channel.send(embed=embed, view=AnonMessageView())
+        
+        await update_sticky_prompt(interaction.channel, current_anon_data)
+
+        save_json_data(ANON_USERS_FILE, current_anon_data)
+        await interaction.followup.send('Đã gửi trả lời của bạn!', ephemeral=True)
+
+class PersistentReplyView(ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @ui.button(label='✍️ Trả lời ẩn danh', style=discord.ButtonStyle.green, custom_id='persistent_general_reply_button')
+    async def general_reply_button(self, interaction: discord.Interaction, button: ui.Button):
+        await interaction.response.send_modal(GeneralReplyModal())
+
 
 class MyClient(discord.Client):
     def __init__(self, *, intents: discord.Intents):
@@ -39,96 +191,111 @@ class MyClient(discord.Client):
         self.tree = app_commands.CommandTree(self)
 
     async def on_ready(self):
+        self.add_view(PersistentReplyView())
+        self.add_view(AnonMessageView())
         await self.tree.sync()
+        activity = discord.Activity(name="/cfs để gửi confession", type=discord.ActivityType.watching)
+        await client.change_presence(activity=activity)
         print(f'Da dang nhap voi ten {self.user}')
         print('Bot san sang!')
 
 intents = discord.Intents.default()
-intents.message_content = True
 client = MyClient(intents=intents)
 
-# --- modal gui cfs ---
+class ConfessionModal(ui.Modal, title='Gửi Confession của bạn'):
+    title_input = ui.TextInput(label='Tiêu đề (Tùy chọn)', placeholder='Nhập tiêu đề...', required=False, max_length=100)
+    content = ui.TextInput(label='Nội dung Confession', style=discord.TextStyle.long, placeholder='Viết confession của bạn ở đây...', required=True, max_length=4000)
 
-class ConfessionModal(ui.Modal, title='Gui Confession cua ban'):
-    content = ui.TextInput(
-        label='Noi dung Confession',
-        style=discord.TextStyle.long,
-        placeholder='Nhap confession cua ban o day...',
-        required=True,
-        max_length=2000,
-    )
-
-    def __init__(self, target_channel: discord.TextChannel, counter_path: str, image: discord.Attachment = None):
+    def __init__(self, target_channel: discord.TextChannel, counter_path: str, attachment: discord.Attachment = None):
         super().__init__()
         self.target_channel = target_channel
         self.counter_path = counter_path
-        self.image = image
+        self.attachment = attachment
 
     async def on_submit(self, interaction: discord.Interaction):
-        # lay so dem hien tai
+        await interaction.response.defer(ephemeral=True, thinking=True)
         current_cfs_number = load_counter(self.counter_path)
-        
-        # tao embed
-        embed = discord.Embed(
-            title=f"Confession #{current_cfs_number}",
-            description=self.content.value,
-            color=discord.Color.from_rgb(255, 182, 193)
-        )
-        embed.set_footer(text="Gui boi mot nguoi an danh")
+        original_content = self.content.value
+        formatted_content = original_content
 
-        if self.image:
-            if self.image.content_type.startswith('image/'):
-                embed.set_image(url=self.image.url)
+        try:
+            prompt = (
+                "Định dạng văn bản sau bằng markdown"
+                "LƯU Ý: không được thêm thắt nội dung, chỉ cần viết lại với định dạng markdown đẹp mắt dễ đọc phù hợp với nội dung."
+                "Giữ nguyên ngôn ngữ gốc. Không thêm bình luận cá nhân của bạn vào output. "
+                f"Văn bản: \"{original_content}\""
+            )
+            response = gemini_model.generate_content(prompt)
+            formatted_content = response.text
+        except Exception as e:
+            print(f"Loi Gemini: {e}. Dung noi dung goc.")
+
+        user_title = self.title_input.value
+        timestamp_str = datetime.now(zoneinfo.ZoneInfo("Asia/Ho_Chi_Minh")).strftime("%d/%m/%Y %I:%M %p")
+        guild_icon_url = interaction.guild.icon.url if interaction.guild and interaction.guild.icon else ""
+        separator = "\n\n- - - - - - - - - - - - - - - - - - - - - - -\n"
+        final_description = formatted_content
+        is_image = self.attachment and self.attachment.content_type and self.attachment.content_type.startswith('image/')
+        if user_title: final_description = separator + final_description
+        if is_image: final_description = final_description + separator
+
+        embed = discord.Embed(title=user_title if user_title else None, description=final_description, color=discord.Color.from_rgb(255, 182, 193))
+        author_name = f"Confession #{current_cfs_number} • {timestamp_str}"
+        embed.set_author(name=author_name, icon_url=guild_icon_url)
+        footer_text = "Nhấn nút 'Trả lời chung' bên dưới để tham gia thảo luận!"
+        bot_avatar_url = client.user.display_avatar.url
+        embed.set_footer(text=footer_text, icon_url=bot_avatar_url)
+        
+        file_to_send = None
+        if self.attachment:
+            if is_image:
+                file_to_send = await self.attachment.to_file()
+                embed.set_image(url=f"attachment://{self.attachment.filename}")
+            elif self.attachment.content_type and (self.attachment.content_type.startswith('video/') or self.attachment.content_type.startswith('audio/')):
+                file_to_send = await self.attachment.to_file()
             else:
-                await interaction.response.send_message("Loi: Tep dinh kem phai la hinh anh.", ephemeral=True)
+                await interaction.followup.send("Lỗi: Loại tệp không được hỗ trợ.", ephemeral=True)
                 return
 
         try:
-            sent_message = await self.target_channel.send(embed=embed)
+            sent_message = await self.target_channel.send(embed=embed, file=file_to_send)
+            new_thread = await sent_message.create_thread(name=f"Thảo luận CFS #{current_cfs_number}", auto_archive_duration=10080)
             
-            # tao thread
-            await sent_message.create_thread(
-                name=f"Thao luan CFS #{current_cfs_number}",
-                auto_archive_duration=10080
+            prompt_msg = await new_thread.send(
+                "Chào mừng đến với buổi thảo luận ẩn danh! Nhấn nút bên dưới hoặc trả lời trực tiếp một tin nhắn. 👇", 
+                view=PersistentReplyView()
             )
-            
-            await interaction.response.send_message(f'✅ Confession #{current_cfs_number} da duoc gui thanh cong!', ephemeral=True)
-            
-            # tang & luu so dem
-            save_counter(self.counter_path, current_cfs_number + 1)
 
-        except discord.Forbidden:
-            await interaction.response.send_message("Loi: Bot khong co quyen trong kenh confession.", ephemeral=True)
+            all_data = load_json_data(ANON_USERS_FILE)
+            all_data[str(new_thread.id)] = {
+                "op_user_id": interaction.user.id,
+                "users": {},
+                "counter": 1,
+                "last_prompt_message_id": prompt_msg.id
+            }
+            save_json_data(ANON_USERS_FILE, all_data)
+            
+            await interaction.followup.send(f'✅ Confession #{current_cfs_number} đã được gửi!', ephemeral=True)
+            save_counter(self.counter_path, current_cfs_number + 1)
         except Exception as e:
-            await interaction.response.send_message(f"Da co loi xay ra: {e}", ephemeral=True)
+            await interaction.followup.send(f"Đã có lỗi xảy ra: {e}", ephemeral=True)
             print(f"Loi chi tiet: {e}")
 
-# --- lenh slash ---
-
-@client.tree.command(name="cfs", description="Gui mot confession an danh vao kenh duoc chi dinh")
-@app_commands.describe(
-    image="(Tuy chon) Dinh kem mot hinh anh vao confession"
-)
-async def confession(interaction: discord.Interaction, image: discord.Attachment = None):
-    target_channel = client.get_channel(config['TARGET_CHANNEL_ID'])
-
+@client.tree.command(name="cfs", description="Gửi một confession ẩn danh vào kênh được chỉ định")
+@app_commands.describe(attachment="(Tùy chọn) Đính kèm một tệp (ảnh, video, audio)")
+async def confession(interaction: discord.Interaction, attachment: discord.Attachment = None):
+    target_channel_id = int(os.getenv('TARGET_CHANNEL_ID'))
+    target_channel = client.get_channel(target_channel_id)
     if not target_channel:
-        await interaction.response.send_message("Loi: Khong tim thay kenh confession. Kiem tra TARGET_CHANNEL_ID trong config.json.", ephemeral=True)
+        await interaction.response.send_message("Lỗi: Không tìm thấy kênh confession.", ephemeral=True)
         return
-
-    modal = ConfessionModal(
-        target_channel=target_channel,
-        counter_path=config['COUNTER_FILE_PATH'],
-        image=image
-    )
+    modal = ConfessionModal(target_channel=target_channel, counter_path=config['COUNTER_FILE_PATH'], attachment=attachment)
     await interaction.response.send_modal(modal)
-
-# --- chay bot ---
 
 if __name__ == "__main__":
     if config:
-        TOKEN = config.get('DISCORD_TOKEN')
-        if TOKEN and TOKEN != "MA_TOKEN_CUA_BAN_O_DAY":
+        TOKEN = os.getenv('DISCORD_TOKEN')
+        if TOKEN:
             client.run(TOKEN)
         else:
-            print("Loi: Vui long them DISCORD_TOKEN vao file config.json.")
+            print("Lỗi: Vui lòng thêm DISCORD_TOKEN vào file .env.")
