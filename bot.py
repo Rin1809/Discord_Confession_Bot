@@ -229,6 +229,11 @@ class ConfessionModal(ui.Modal, title='Gửi Confession của bạn'):
             formatted_content = response.text
         except Exception as e:
             print(f"Loi Gemini: {e}. Dung noi dung goc.")
+            await interaction.followup.send(
+                "⚠️ Đã có lỗi khi định dạng confession của bạn bằng AI. "
+                "Confession vẫn được gửi với nội dung gốc.", 
+                ephemeral=True
+            )
 
         user_title = self.title_input.value
         timestamp_str = datetime.now(zoneinfo.ZoneInfo("Asia/Ho_Chi_Minh")).strftime("%d/%m/%Y %I:%M %p")
@@ -242,7 +247,7 @@ class ConfessionModal(ui.Modal, title='Gửi Confession của bạn'):
         embed = discord.Embed(title=user_title if user_title else None, description=final_description, color=discord.Color.from_rgb(255, 182, 193))
         author_name = f"Confession #{current_cfs_number} • {timestamp_str}"
         embed.set_author(name=author_name, icon_url=guild_icon_url)
-        footer_text = "Nhấn nút 'Trả lời chung' bên dưới để tham gia thảo luận!"
+        footer_text = "Nhấn nút 'Trả lời ẩn danh' bên dưới để tham gia thảo luận!"
         bot_avatar_url = client.user.display_avatar.url
         embed.set_footer(text=footer_text, icon_url=bot_avatar_url)
         
