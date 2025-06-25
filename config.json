@@ -1,3 +1,4 @@
 {
-  "COUNTER_FILE_PATH": "counter.txt"
+  "COUNTER_FILE_PATH": "counter.txt",
+  "ANON_USERS_FILE": "anonymous_users.json"
 }

@@ -1,21 +1,14 @@
 import discord
 import os
 import json
+import random 
 from discord import app_commands, ui
 from dotenv import load_dotenv
 import google.generativeai as genai
 from datetime import datetime
 import zoneinfo
 
-load_dotenv()
-
-ANON_USERS_FILE = 'anonymous_users.json'
-
-PREDEFINED_COLORS = [
-    0x3498db, 0x2ecc71, 0xf1c40f, 0xe91e63, 0x9b59b6,
-    0x1abc9c, 0xf39c12, 0x34495e, 0xad1457, 0x607d8b
-]
-
+# dinh nghia ham load/save json
 def load_json_data(filepath):
     if not os.path.exists(filepath):
         with open(filepath, 'w', encoding='utf-8') as f:
@@ -31,6 +24,16 @@ def save_json_data(filepath, data):
     with open(filepath, 'w', encoding='utf-8') as f:
         json.dump(data, f, indent=4)
 
+load_dotenv()
+
+config = load_json_data('config.json')
+ANON_USERS_FILE = config['ANON_USERS_FILE']
+
+PREDEFINED_COLORS = [
+    0x3498db, 0x2ecc71, 0xf1c40f, 0xe91e63, 0x9b59b6,
+    0x1abc9c, 0xf39c12, 0x34495e, 0xad1457, 0x607d8b
+]
+
 anon_users_data = load_json_data(ANON_USERS_FILE)
 
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
@@ -40,8 +43,6 @@ if not GEMINI_API_KEY:
 
 genai.configure(api_key=GEMINI_API_KEY)
 gemini_model = genai.GenerativeModel('gemini-2.5-flash')
-
-config = load_json_data('config.json')
 
 def load_counter(path):
     try:
@@ -53,7 +54,6 @@ def load_counter(path):
 def save_counter(path, value):
     with open(path, 'w', encoding='utf-8') as f: f.write(str(value))
 
-
 def get_anonymous_identity(user_id_str: str, thread_data: dict):
     if user_id_str == str(thread_data["op_user_id"]):
         return "Chủ thớt (OP)", discord.Color.gold()
@@ -64,7 +64,7 @@ def get_anonymous_identity(user_id_str: str, thread_data: dict):
     
     new_anon_number = thread_data.get("counter", 1)
     anon_name = f"Người lạ #{new_anon_number}"
-    color_value = PREDEFINED_COLORS[(new_anon_number - 1) % len(PREDEFINED_COLORS)]
+    color_value = random.choice(PREDEFINED_COLORS)
     
     thread_data["users"][user_id_str] = {"id": anon_name, "color": color_value}
     thread_data["counter"] = new_anon_number + 1
@@ -91,28 +91,21 @@ async def update_sticky_prompt(thread: discord.Thread, all_data: dict):
     )
     all_data[thread_id_str]["last_prompt_message_id"] = new_prompt_msg.id
 
+async def handle_anonymous_reply(interaction: discord.Interaction, content: str, target_message: discord.Message = None):
+    current_anon_data = load_json_data(ANON_USERS_FILE)
+    thread_id_str = str(interaction.channel.id)
+    user_id_str = str(interaction.user.id)
+    
+    if thread_id_str not in current_anon_data:
+        return
 
-class DirectReplyModal(ui.Modal, title='Trả lời trực tiếp'):
-    reply_content = ui.TextInput(label='Nội dung trả lời', style=discord.TextStyle.long, required=True, max_length=2000)
-
-    def __init__(self, target_message: discord.Message):
-        super().__init__()
-        self.target_message = target_message
-
-    async def on_submit(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
-
-        current_anon_data = load_json_data(ANON_USERS_FILE)
-        thread_id_str = str(interaction.channel.id)
-        user_id_str = str(interaction.user.id)
-        
-        if thread_id_str not in current_anon_data: return
-
-        thread_data = current_anon_data[thread_id_str]
-        anon_name, anon_color = get_anonymous_identity(user_id_str, thread_data)
-        
-        # xu ly quote
-        replied_embed = self.target_message.embeds[0]
+    thread_data = current_anon_data[thread_id_str]
+    anon_name, anon_color = get_anonymous_identity(user_id_str, thread_data)
+    
+    description = content
+    
+    if target_message and target_message.embeds:
+        replied_embed = target_message.embeds[0]
         replied_author = replied_embed.author.name or "ẩn danh"
         full_description = replied_embed.description
         
@@ -124,26 +117,35 @@ class DirectReplyModal(ui.Modal, title='Trả lời trực tiếp'):
         quote = content_part.split('\n')[0]
         if len(quote) > 70: quote = quote[:70] + "..."
         
-        description = f"> **Trả lời {replied_author}**: *{quote}*\n\n{self.reply_content.value}"
+        description = f"> **Trả lời {replied_author}**: *{quote}*\n\n{content}"
 
-        embed = discord.Embed(
-            description=description, color=anon_color, 
-            timestamp=datetime.now(zoneinfo.ZoneInfo("Asia/Ho_Chi_Minh"))
-        )
-        embed.set_author(name=anon_name)
-        
-        await interaction.channel.send(embed=embed, view=AnonMessageView())
-        
-        await update_sticky_prompt(interaction.channel, current_anon_data)
+    embed = discord.Embed(
+        description=description, color=anon_color, 
+        timestamp=datetime.now(zoneinfo.ZoneInfo("Asia/Ho_Chi_Minh"))
+    )
+    embed.set_author(name=anon_name)
+    
+    await interaction.channel.send(embed=embed, view=AnonMessageView())
+    await update_sticky_prompt(interaction.channel, current_anon_data)
+    save_json_data(ANON_USERS_FILE, current_anon_data)
 
-        save_json_data(ANON_USERS_FILE, current_anon_data)
+class DirectReplyModal(ui.Modal, title='Trả lời trực tiếp'):
+    reply_content = ui.TextInput(label='Nội dung trả lời', style=discord.TextStyle.long, required=True, max_length=2000)
+
+    def __init__(self, target_message: discord.Message):
+        super().__init__()
+        self.target_message = target_message
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        await handle_anonymous_reply(interaction, self.reply_content.value, self.target_message)
         await interaction.followup.send('Đã gửi trả lời của bạn!', ephemeral=True)
 
 class AnonMessageView(ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    @ui.button(label='Trả lời', style=discord.ButtonStyle.secondary, custom_id='direct_reply_button')
+    @ui.button(label='⮤ Trả lời', style=discord.ButtonStyle.secondary, custom_id='direct_reply_button')
     async def direct_reply(self, interaction: discord.Interaction, button: ui.Button):
         await interaction.response.send_modal(DirectReplyModal(target_message=interaction.message))
 
@@ -152,27 +154,7 @@ class GeneralReplyModal(ui.Modal, title='Trả lời ẩn danh'):
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
-        
-        current_anon_data = load_json_data(ANON_USERS_FILE)
-        thread_id_str = str(interaction.channel.id)
-        user_id_str = str(interaction.user.id)
-        
-        if thread_id_str not in current_anon_data: return
-
-        thread_data = current_anon_data[thread_id_str]
-        anon_name, anon_color = get_anonymous_identity(user_id_str, thread_data)
-
-        embed = discord.Embed(
-            description=self.reply_content.value, color=anon_color,
-            timestamp=datetime.now(zoneinfo.ZoneInfo("Asia/Ho_Chi_Minh"))
-        )
-        embed.set_author(name=anon_name)
-
-        await interaction.channel.send(embed=embed, view=AnonMessageView())
-        
-        await update_sticky_prompt(interaction.channel, current_anon_data)
-
-        save_json_data(ANON_USERS_FILE, current_anon_data)
+        await handle_anonymous_reply(interaction, self.reply_content.value)
         await interaction.followup.send('Đã gửi trả lời của bạn!', ephemeral=True)
 
 class PersistentReplyView(ui.View):
@@ -182,7 +164,6 @@ class PersistentReplyView(ui.View):
     @ui.button(label='✍️ Trả lời ẩn danh', style=discord.ButtonStyle.green, custom_id='persistent_general_reply_button')
     async def general_reply_button(self, interaction: discord.Interaction, button: ui.Button):
         await interaction.response.send_modal(GeneralReplyModal())
-
 
 class MyClient(discord.Client):
     def __init__(self, *, intents: discord.Intents):
@@ -237,13 +218,19 @@ class ConfessionModal(ui.Modal, title='Gửi Confession của bạn'):
         user_title = self.title_input.value
         timestamp_str = datetime.now(zoneinfo.ZoneInfo("Asia/Ho_Chi_Minh")).strftime("%d/%m/%Y %I:%M %p")
         guild_icon_url = interaction.guild.icon.url if interaction.guild and interaction.guild.icon else ""
-        separator = "\n\n- - - - - - - - - - - - - - - - - - - - - - -\n"
-        final_description = formatted_content
+        
+        title_separator = "⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯\n\n"
+        
+        if user_title:
+            final_description = title_separator + formatted_content
+        else:
+            final_description = formatted_content
+        
         is_image = self.attachment and self.attachment.content_type and self.attachment.content_type.startswith('image/')
-        if user_title: final_description = separator + final_description
-        if is_image: final_description = final_description + separator
 
-        embed = discord.Embed(title=user_title if user_title else None, description=final_description, color=discord.Color.from_rgb(255, 182, 193))
+        random_color = discord.Color(random.randint(0, 0xFFFFFF))
+        embed = discord.Embed(title=user_title if user_title else None, description=final_description, color=random_color)
+        
         author_name = f"Confession #{current_cfs_number} • {timestamp_str}"
         embed.set_author(name=author_name, icon_url=guild_icon_url)
         footer_text = "Được gửi ẩn danh bởi Yumemi-chan"
