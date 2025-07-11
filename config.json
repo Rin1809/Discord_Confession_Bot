@@ -5,16 +5,26 @@
     "welcome_settings": {
         "enabled": true,
         "channel_id": 1387427419169755277,
-        "message": "Ch\u00e0o m\u1eebng {user.mention} \u0111\u00e3 gia nh\u1eadp **{server.name}**! B\u1ea1n l\u00e0 th\u00e0nh vi\u00ean th\u1ee9 {server.member_count}."
+        "rules_channel_id": "1387005759442911314",
+        "lead_role_id": "1387431634843996202",
+        "title": "Ch\u00e0o m\u1eebng {user.display_name} \u0111\u1ebfn v\u1edbi Yumemi /\u300c\u5922\u898b\u300d!",
+        "message": "\n\n{user.mention} \u01a1i <a:Helu:1388151789161021441>,\n\nH\u00e3y tr\u1ea3 l\u1eddi c\u00e2u h\u1ecfi khi v\u00e0o server \u0111\u1ec3 l\u1ef1a ch\u1ecdn nh\u1eefng Role v\u00e0 Channel ph\u00f9 h\u1ee3p v\u1edbi m\u00ecnh t\u1ea1i {rules_channel} nh\u00e9. \n\nCh\u00fac b\u1ea1n c\u00f3 kho\u1ea3ng th\u1eddi gian vui v\u1ebb \u1edf \u0111\u00e2y  \u227d^\u2022\u2a4a\u2022^\u227c \n\nL\u01b0u \u00fd: N\u1ebfu c\u00f3 g\u00ec th\u1eafc m\u1eafc xin h\u00e3y ping {lead_role_mention}",
+        "image_url": "https://cdn.discordapp.com/attachments/1247808882089263165/1388147027204112404/Generated_File_May_17_2025_-_1_25AM.gif?ex=685fec29&is=685e9aa9&hm=2cc7d3ae0aec51ef1d6e18c58d621ae92207f8621e3a8e179606b4da4878427d&"
     },
     "leave_settings": {
         "enabled": true,
         "channel_id": 1387428855484256338,
-        "message": "**{user.name}** \u0111\u00e3 r\u1eddi kh\u1ecfi server... T\u1ea1m bi\u1ec7t nh\u00e9."
+        "title": "**{user.display_name}** \u0111\u00e3 r\u1eddi \u0111i m\u1ea5t r\u1ed3i...",
+        "message": "T\u1ea1m bi\u1ec7t nh\u00e9!\n\nMong r\u1eb1ng ch\u00fang ta s\u1ebd g\u1eb7p l\u1ea1i.\n\n <a:Helu:1388151789161021441> <a:Helu:1388151789161021441> <a:Helu:1388151789161021441>",
+        "image_url": "https://cdn.discordapp.com/attachments/1247808882089263165/1388147027204112404/Generated_File_May_17_2025_-_1_25AM.gif?ex=685fec29&is=685e9aa9&hm=2cc7d3ae0aec51ef1d6e18c58d621ae92207f8621e3a8e179606b4da4878427d&"
     },
     "boost_settings": {
         "enabled": true,
         "channel_id": 1387428883888083014,
-        "message": "\ud83c\udf89 C\u1ea3m \u01a1n {user.mention} \u0111\u00e3 boost **{server.name}**! Server hi\u1ec7n c\u00f3 **{server.boost_count}** l\u01b0\u1ee3t boost. \u2728"
+        "message": "\u0110\u1ea1i gia {user.mention} v\u1eeba Boost cho server.\n\nB\u1ea1n \u0111\u00e3 tr\u1edf th\u00e0nh qu\u00fd t\u1ed9c c\u1ee7a server r\u1ed3i!! <a:HanaCheer2:1375507407387623434>",
+        "image_url": ""
+    },
+    "channel_mentions": {
+        "\u1edf_\u0111\u00e2y_n\u00e8": 1387005759442911314
     }
 }

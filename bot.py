@@ -8,7 +8,6 @@ import google.generativeai as genai
 from datetime import datetime
 import zoneinfo
 
-# load/save file json
 def load_json_data(filepath):
     if not os.path.exists(filepath):
         with open(filepath, 'w', encoding='utf-8') as f:
@@ -26,9 +25,8 @@ def save_json_data(filepath, data):
 
 load_dotenv()
 
-# load config
 config = load_json_data('config.json')
-ANON_USERS_FILE = config['ANON_USERS_FILE']
+ANON_USERS_FILE = config.get('ANON_USERS_FILE', 'anonymous_users.json')
 
 PREDEFINED_COLORS = [
     0x3498db, 0x2ecc71, 0xf1c40f, 0xe91e63, 0x9b59b6,
@@ -42,7 +40,6 @@ if not GEMINI_API_KEY:
     print("Loi: Vui long them GEMINI_API_KEY vao file .env.")
     exit()
 
-# config gemini
 genai.configure(api_key=GEMINI_API_KEY)
 gemini_model = genai.GenerativeModel('gemini-2.5-flash')
 
@@ -57,7 +54,6 @@ def save_counter(path, value):
     with open(path, 'w', encoding='utf-8') as f: f.write(str(value))
 
 def get_anonymous_identity(user_id_str: str, thread_data: dict):
-    # check op
     if user_id_str == str(thread_data["op_user_id"]):
         return "Chủ thớt (OP)", discord.Color.gold()
     
@@ -65,7 +61,6 @@ def get_anonymous_identity(user_id_str: str, thread_data: dict):
         user_data = thread_data["users"][user_id_str]
         return user_data["id"], discord.Color(user_data["color"])
     
-    # tao user an danh moi
     new_anon_number = thread_data.get("counter", 1)
     anon_name = f"Người lạ #{new_anon_number}"
     color_value = random.choice(PREDEFINED_COLORS)
@@ -81,16 +76,14 @@ async def update_sticky_prompt(thread: discord.Thread, all_data: dict):
     if thread_id_str not in all_data:
         return
 
-    # xoa prompt cu
     old_prompt_id = all_data[thread_id_str].get("last_prompt_message_id")
     if old_prompt_id:
         try:
             old_prompt_msg = await thread.fetch_message(old_prompt_id)
             await old_prompt_msg.delete()
         except (discord.NotFound, discord.Forbidden):
-            pass # bo qua neu ko tim thay
+            pass
 
-    # gui prompt moi
     new_prompt_msg = await thread.send(
         "Nhấn nút bên dưới nếu muốn trả lời ẩn danh.👇",
         view=PersistentReplyView()
@@ -110,7 +103,6 @@ async def handle_anonymous_reply(interaction: discord.Interaction, content: str,
     
     description = content
     
-    # xu ly reply
     if target_message and target_message.embeds:
         replied_embed = target_message.embeds[0]
         replied_author = replied_embed.author.name or "ẩn danh"
@@ -189,7 +181,6 @@ class MyClient(discord.Client):
         print('Bot san sang!')
     
     async def on_member_join(self, member: discord.Member):
-        # xu ly chao mung
         global config
         config = load_json_data('config.json') 
         
@@ -201,21 +192,43 @@ class MyClient(discord.Client):
         if not channel:
             return
 
-        message = welcome_config.get("message", "Chào mừng {user.mention}!")
-        
+        title_template = welcome_config.get("title", "Chào mừng {user.display_name}!")
+        message_template = welcome_config.get("message", "Chào mừng {user.mention}!")
+        image_url = welcome_config.get("image_url")
+        rules_id = welcome_config.get("rules_channel_id")
+        lead_id = welcome_config.get("lead_role_id")
+        color_value = welcome_config.get("color", 0xFFB6C1)
+
         try:
-            # fix: chuan hoa bien
-            formatted_message = message.format(user=member, server=member.guild)
-            embed = discord.Embed(description=formatted_message, color=discord.Color.green())
-            if member.avatar:
-                embed.set_thumbnail(url=member.avatar.url)
-            embed.set_author(name=f"{member.display_name} đã tham gia!", icon_url=member.guild.icon.url if member.guild.icon else None)
+            msg_with_ids = message_template
+            if rules_id:
+                msg_with_ids = msg_with_ids.replace("{rules_channel_id}", str(rules_id))
+            if lead_id:
+                msg_with_ids = msg_with_ids.replace("{lead_role_id}", str(lead_id))
+
+            final_title = title_template.format(user=member, server=member.guild)
+            final_message = msg_with_ids.format(user=member, server=member.guild)
+
+            embed = discord.Embed(
+                title=final_title,
+                description=final_message,
+                color=discord.Color(color_value)
+            )
+            
+            if member.guild.icon:
+                embed.set_author(name=member.guild.name, icon_url=member.guild.icon.url)
+            
+            if member.display_avatar:
+                embed.set_thumbnail(url=member.display_avatar.url)
+            
+            if image_url:
+                embed.set_image(url=image_url)
+
             await channel.send(embed=embed)
         except Exception as e:
             print(f"Loi khi gui tin chao mung: {e}")
 
     async def on_member_remove(self, member: discord.Member):
-        # xu ly roi di
         global config
         config = load_json_data('config.json')
         
@@ -227,19 +240,35 @@ class MyClient(discord.Client):
         if not channel:
             return
 
-        message = leave_config.get("message", "**{user.name}** đã rời khỏi server.")
+        title_template = leave_config.get("title", "{user.display_name} đã rời đi")
+        message_template = leave_config.get("message", "Tạm biệt bạn.")
+        image_url = leave_config.get("image_url")
+        color_value = leave_config.get("color", 0xFFB6C1)
         
         try:
-            # fix: chuan hoa bien
-            formatted_message = message.format(user=member, server=member.guild)
-            embed = discord.Embed(description=formatted_message, color=discord.Color.dark_grey())
-            embed.set_author(name=f"{member.display_name} đã rời đi", icon_url=member.avatar.url if member.avatar else None)
+            final_title = title_template.format(user=member, server=member.guild)
+            final_message = message_template.format(user=member, server=member.guild)
+
+            embed = discord.Embed(
+                title=final_title,
+                description=final_message,
+                color=discord.Color(color_value)
+            )
+
+            if member.guild.icon:
+                embed.set_author(name=member.guild.name, icon_url=member.guild.icon.url)
+
+            if member.display_avatar:
+                embed.set_thumbnail(url=member.display_avatar.url)
+
+            if image_url:
+                embed.set_image(url=image_url)
+            
             await channel.send(embed=embed)
         except Exception as e:
             print(f"Loi khi gui tin roi di: {e}")
 
     async def on_member_update(self, before: discord.Member, after: discord.Member):
-        # xu ly boost
         if before.premium_since is None and after.premium_since is not None:
             global config
             config = load_json_data('config.json')
@@ -253,23 +282,23 @@ class MyClient(discord.Client):
                 return
 
             message = boost_config.get("message", "Cảm ơn {user.mention} đã boost server!")
-            
+            image_url = boost_config.get("image_url")
+
             try:
-                # fix: chuan hoa bien & sua loi boost_count
                 formatted_message = message.format(user=after, server=after.guild)
                 embed = discord.Embed(description=formatted_message, color=discord.Color.magenta())
                 embed.set_author(name=f"{after.display_name} vừa boost server!", icon_url=after.guild.icon.url if after.guild.icon else None)
                 embed.set_thumbnail(url=after.display_avatar.url)
+                if image_url:
+                    embed.set_image(url=image_url)
                 await channel.send(embed=embed)
             except Exception as e:
                 print(f"Loi khi gui tin boost: {e}")
 
-# them intents.members
 intents = discord.Intents.default()
 intents.members = True 
 client = MyClient(intents=intents)
 
-# --- MODALS ---
 class ConfessionModal(ui.Modal, title='Gửi Confession của bạn'):
     title_input = ui.TextInput(label='Tiêu đề (Tùy chọn)', placeholder='Nhập tiêu đề...', required=False, max_length=100)
     content = ui.TextInput(label='Nội dung Confession', style=discord.TextStyle.long, placeholder='Viết confession của bạn ở đây...', required=True, max_length=4000)
@@ -301,7 +330,10 @@ class ConfessionModal(ui.Modal, title='Gửi Confession của bạn'):
         embed = discord.Embed(title=user_title if user_title else None, description=final_description, color=random_color)
         author_name = f"Confession #{current_cfs_number} • {timestamp_str}"
         embed.set_author(name=author_name, icon_url=guild_icon_url)
+        
         embed.set_footer(text="Được gửi ẩn danh bởi Yumemi-chan", icon_url=client.user.display_avatar.url)
+        footer_text = "Được gửi ẩn danh bởi Yumemi-chan\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯\nGõ lệnh /cfs để gửi confession"
+        embed.set_footer(text=footer_text, icon_url=client.user.display_avatar.url)
         file_to_send = None
         if self.attachment:
             if is_image:
@@ -349,7 +381,6 @@ class BoostMessageModal(ui.Modal, title='Thiết lập tin nhắn boost'):
         save_json_data('config.json', config)
         await interaction.response.send_message(f"✅ Đã cập nhật tin nhắn boost.", ephemeral=True)
 
-# --- COMMANDS ---
 @client.tree.command(name="cfs", description="Gửi một confession ẩn danh")
 @app_commands.describe(attachment="(Tùy chọn) Đính kèm một tệp")
 async def confession(interaction: discord.Interaction, attachment: discord.Attachment = None):
@@ -361,7 +392,8 @@ async def confession(interaction: discord.Interaction, attachment: discord.Attac
     if not target_channel:
         await interaction.response.send_message("Lỗi: Không tìm thấy kênh confession.", ephemeral=True)
         return
-    await interaction.response.send_modal(ConfessionModal(target_channel=target_channel, counter_path=config['COUNTER_FILE_PATH'], attachment=attachment))
+    counter_path = config.get('COUNTER_FILE_PATH', 'counter.txt')
+    await interaction.response.send_modal(ConfessionModal(target_channel=target_channel, counter_path=counter_path, attachment=attachment))
 
 @client.tree.command(name="setchannel", description="Thiết lập kênh confession (Admin).")
 @app_commands.describe(channel="Kênh để nhận confession.")
@@ -372,14 +404,12 @@ async def setchannel(interaction: discord.Interaction, channel: discord.TextChan
     save_json_data('config.json', config) 
     await interaction.response.send_message(f"✅ Đã thiết lập kênh confession là {channel.mention}.", ephemeral=True)
 
-# --- COMMAND GROUPS ---
 async def handle_permission_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
     if isinstance(error, app_commands.MissingPermissions):
         await interaction.response.send_message("Lỗi: Bạn không có quyền dùng lệnh này.", ephemeral=True)
     else:
         await interaction.response.send_message(f"Lỗi: {error}", ephemeral=True)
 
-# Welcome Group
 welcome_group = app_commands.Group(name="welcome", description="Cài đặt chào mừng thành viên (Admin)")
 @welcome_group.command(name="toggle", description="Bật/Tắt tính năng chào mừng.")
 @app_commands.checks.has_permissions(administrator=True)
@@ -405,7 +435,6 @@ client.tree.add_command(welcome_group)
 async def welcome_group_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
     await handle_permission_error(interaction, error)
 
-# Leave Group
 leave_group = app_commands.Group(name="leave", description="Cài đặt thông báo thành viên rời đi (Admin)")
 @leave_group.command(name="toggle", description="Bật/Tắt thông báo thành viên rời đi.")
 @app_commands.checks.has_permissions(administrator=True)
@@ -431,7 +460,6 @@ client.tree.add_command(leave_group)
 async def leave_group_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
     await handle_permission_error(interaction, error)
 
-# Boost Group
 boost_group = app_commands.Group(name="boost", description="Cài đặt thông báo boost server (Admin)")
 @boost_group.command(name="toggle", description="Bật/Tắt thông báo boost.")
 @app_commands.checks.has_permissions(administrator=True)
