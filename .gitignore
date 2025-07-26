@@ -3,3 +3,5 @@
 moitruongao/
 __pycache__/
 *.pyc
+database.db
+config.json
