@@ -12,7 +12,7 @@ PREDEFINED_COLORS = [0x3498db, 0x2ecc71, 0xf1c40f, 0xe91e63, 0x9b59b6, 0x1abc9c,
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
-    gemini_model = genai.GenerativeModel('gemini-1.5-flash')
+    gemini_model = genai.GenerativeModel('gemini-2.5-flash')
 else:
     gemini_model = None
 
@@ -22,7 +22,6 @@ class PersistentReplyView(ui.View):
 
     @ui.button(label='✍️ Trả lời ẩn danh', style=discord.ButtonStyle.green, custom_id='persistent_general_reply_button')
     async def general_reply_button(self, interaction: discord.Interaction, button: ui.Button):
-        # Callback nay se duoc ghi de trong Cog's setup
         pass
 
 class AnonMessageView(ui.View):
@@ -31,7 +30,6 @@ class AnonMessageView(ui.View):
 
     @ui.button(label='Trả lời', style=discord.ButtonStyle.secondary, custom_id='direct_reply_button')
     async def direct_reply(self, interaction: discord.Interaction, button: ui.Button):
-        # Callback nay se duoc ghi de trong Cog's setup
         pass
 
 def get_anonymous_identity(user_id_str: str, thread_data: dict):
@@ -106,17 +104,40 @@ class ConfessionModal(ui.Modal, title='Gửi Confession của bạn'):
         formatted_content = original_content
         if gemini_model:
             try:
-                prompt = (f'Định dạng lại văn bản sau bằng markdown cho đẹp mắt, dễ đọc. Giữ nguyên ngôn ngữ gốc và không thêm bất kỳ bình luận hay nội dung nào khác. Văn bản: "{original_content}"')
+                prompt = ("Định dạng văn bản sau bằng markdown (quan trọng, luôn luôn phải có. in đậm, v.v... các xuống hàng, phân tách nội dung v.v....), chỉnh sửa bố cục""LƯU Ý: không được thêm thắt nội dung, chỉ cần viết lại với định dạng markdow, chỉnh sửa bố cục đẹp mắt dễ đọc và chuyên nghiệp một cách phù hợp với nội dung. Giữ nguyên ngôn ngữ gốc. KHÔNG ĐƯỢC THAY ĐỔI NỘI DUNG DÙ CHO CÓ SAI CHÍNH TẢ ĐI NỮA. Không thêm bình luận cá nhân của bạn vào output. "f"Văn bản: \"{original_content}\"")
                 response = await gemini_model.generate_content_async(prompt)
                 formatted_content = response.text
             except Exception as e:
                 print(f"Loi Gemini: {e}. Dung noi dung goc.")
                 await interaction.followup.send("⚠️ Lỗi định dạng AI. Confession vẫn được gửi với nội dung gốc.", ephemeral=True)
+        
         user_title = self.title_input.value
         timestamp_str = datetime.now(zoneinfo.ZoneInfo("Asia/Ho_Chi_Minh")).strftime("%d/%m/%Y %I:%M %p")
-        embed = discord.Embed(title=user_title or None, description=formatted_content, color=discord.Color(random.randint(0, 0xFFFFFF)))
+        
+        # Dinh nghia duong ke
+        SEPARATOR_LINE = "⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯"
+
+        # Them duong ke vao noi dung neu co tieu de
+        final_description = formatted_content
+        if user_title:
+            final_description = f"{SEPARATOR_LINE}\n\n{formatted_content}"
+
+        # Tao footer text
+        footer_text = (
+            f"Được gửi ẩn danh bởi Yumemi-chan\n"
+            f"{SEPARATOR_LINE}\n"
+            f"Gõ lệnh /cfs để gửi confession"
+        )
+        
+        embed = discord.Embed(
+            title=user_title or None,
+            description=final_description,
+            color=discord.Color(random.randint(0, 0xFFFFFF))
+        )
+        
         embed.set_author(name=f"Confession #{current_cfs_number} • {timestamp_str}", icon_url=interaction.guild.icon.url if interaction.guild.icon else "")
-        embed.set_footer(text="Gõ lệnh /cfs để gửi confession", icon_url=self.bot.user.display_avatar.url)
+        embed.set_footer(text=footer_text, icon_url=self.bot.user.display_avatar.url)
+        
         file_to_send = None
         if self.attachment:
             if self.attachment.content_type and (self.attachment.content_type.startswith(('image/', 'video/', 'audio/'))):
@@ -145,7 +166,6 @@ class ConfessionCog(commands.Cog):
         self.bot.add_view(PersistentReplyView())
         self.bot.add_view(AnonMessageView())
 
-        # Ghi de callback cua button de truyen 'bot' vao modal
         PersistentReplyView.general_reply_button.callback = self.general_reply_callback
         AnonMessageView.direct_reply.callback = self.direct_reply_callback
 
