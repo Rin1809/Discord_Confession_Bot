@@ -33,13 +33,12 @@ def migrate_data():
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
 
-        # Dam bao guild co trong DB
+        # --- PHẦN 1: Di chuyển cài đặt Server ---
+        print("Đang di chuyển cài đặt server...")
         cursor.execute("INSERT OR IGNORE INTO guild_settings (guild_id) VALUES (?)", (guild_id,))
 
-        # Chuan bi du lieu de update
         settings_to_update = {
             'cfs_channel_id': config.get('TARGET_CHANNEL_ID'),
-            
             'welcome_enabled': int(config.get('welcome_settings', {}).get('enabled', 0)),
             'welcome_channel_id': config.get('welcome_settings', {}).get('channel_id'),
             'welcome_rules_channel_id': config.get('welcome_settings', {}).get('rules_channel_id'),
@@ -47,33 +46,38 @@ def migrate_data():
             'welcome_title': config.get('welcome_settings', {}).get('title'),
             'welcome_message': config.get('welcome_settings', {}).get('message'),
             'welcome_image_url': config.get('welcome_settings', {}).get('image_url'),
-            
             'leave_enabled': int(config.get('leave_settings', {}).get('enabled', 0)),
             'leave_channel_id': config.get('leave_settings', {}).get('channel_id'),
             'leave_title': config.get('leave_settings', {}).get('title'),
             'leave_message': config.get('leave_settings', {}).get('message'),
             'leave_image_url': config.get('leave_settings', {}).get('image_url'),
-            
             'boost_enabled': int(config.get('boost_settings', {}).get('enabled', 0)),
             'boost_channel_id': config.get('boost_settings', {}).get('channel_id'),
             'boost_message': config.get('boost_settings', {}).get('message'),
             'boost_image_url': config.get('boost_settings', {}).get('image_url')
         }
 
-        # Tao cau lenh SQL
         update_clauses = [f"{key} = ?" for key in settings_to_update.keys()]
         sql_query = f"UPDATE guild_settings SET {', '.join(update_clauses)} WHERE guild_id = ?"
-
-        # Tao tuple gia tri
         sql_values = list(settings_to_update.values())
         sql_values.append(guild_id)
 
-        # Thuc thi
         cursor.execute(sql_query, tuple(sql_values))
         conn.commit()
+        print("-> Đã di chuyển cài đặt server thành công.")
+
+        # --- PHẦN 2: Cập nhật số đếm confession ---
+        print("Đang cập nhật số đếm confession...")
+        # Lệnh INSERT OR REPLACE sẽ tạo mới nếu chưa có, hoặc thay thế nếu đã có.
+        cursor.execute("INSERT OR REPLACE INTO bot_settings (key, value) VALUES ('cfs_counter', '61')")
+        conn.commit()
+        print("-> Đã đặt lại số đếm confession thành 61.")
         
+        # --- Hoàn tất ---
         print("\n-----------------------------------------")
-        print(f"✅ THÀNH CÔNG! Đã di chuyển dữ liệu từ '{CONFIG_FILE}' vào '{DB_FILE}' cho Server ID: {guild_id}")
+        print(f"✅ HOÀN TẤT! Đã di chuyển và cập nhật dữ liệu thành công.")
+        print(f"   - Cài đặt từ '{CONFIG_FILE}' đã được áp dụng cho Server ID: {guild_id}")
+        print(f"   - Số đếm confession đã được đặt thành 61.")
         print("-----------------------------------------")
 
     except sqlite3.Error as e:
