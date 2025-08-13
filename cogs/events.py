@@ -35,7 +35,8 @@ class EventsCog(commands.Cog):
             if member.display_avatar: embed.set_thumbnail(url=member.display_avatar.url)
             if settings.get("welcome_image_url"): embed.set_image(url=settings.get("welcome_image_url"))
             
-            await channel.send(embed=embed)
+            # gui them tin nhan thuong de ping
+            await channel.send(f'{member.mention} đã vàoo!', embed=embed)
         except Exception as e:
             print(f"Loi khi gui tin chao mung cho server {member.guild.id}: {e}")
 
