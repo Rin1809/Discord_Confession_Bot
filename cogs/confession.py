@@ -12,11 +12,11 @@ PREDEFINED_COLORS = [0x3498db, 0x2ecc71, 0xf1c40f, 0xe91e63, 0x9b59b6, 0x1abc9c,
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
-    gemini_model = genai.GenerativeModel('gemini-1.5-flash') # Sử dụng model mới hơn nếu có
+    gemini_model = genai.GenerativeModel('gemini-2.5-flash') # model suwr udnhg 
 else:
     gemini_model = None
 
-# --- CÁC HÀM TRỢ GIÚP (Không thay đổi) ---
+# --- CÁC HÀM TRỢ GIÚP  ---
 
 def get_anonymous_identity(user_id_str: str, thread_data: dict):
     if user_id_str == str(thread_data.get("op_user_id")): return "Chủ thớt (OP)", discord.Color.gold()
@@ -63,7 +63,7 @@ async def handle_anonymous_reply(bot, interaction: discord.Interaction, content:
     await update_sticky_prompt(bot.db, interaction.channel)
     await bot.db.save_anon_thread_data(interaction.channel.id, thread_data)
 
-# --- MODAL (Không thay đổi) ---
+# --- MODAL ---
 
 class ReplyModal(ui.Modal):
     reply_content = ui.TextInput(label='Nội dung trả lời', style=discord.TextStyle.long, required=True, max_length=2000)
