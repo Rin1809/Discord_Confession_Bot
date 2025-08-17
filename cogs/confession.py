@@ -16,7 +16,6 @@ if GEMINI_API_KEY:
 else:
     gemini_model = None
 
-# --- SỬA LỖI VẤN ĐỀ 2: MÀU TRÙNG NHAU ---
 def get_anonymous_identity(user_id_str: str, thread_data: dict):
     if user_id_str == str(thread_data.get("op_user_id")): return "Chủ thớt (OP)", discord.Color.gold()
     if user_id_str in thread_data.get("users", {}):
@@ -26,8 +25,6 @@ def get_anonymous_identity(user_id_str: str, thread_data: dict):
     new_anon_number = thread_data.get("counter", 1)
     anon_name = f"Người lạ #{new_anon_number}"
     
-    # <<< THAY ĐỔI Ở ĐÂY: Chọn màu tuần tự thay vì ngẫu nhiên để tránh trùng lặp
-    # Dùng toán tử modulo (%) để quay vòng danh sách màu nếu hết
     color_index = (new_anon_number - 1) % len(PREDEFINED_COLORS)
     color_value = PREDEFINED_COLORS[color_index]
     
@@ -36,24 +33,36 @@ def get_anonymous_identity(user_id_str: str, thread_data: dict):
     thread_data["counter"] = new_anon_number + 1
     return anon_name, discord.Color(color_value)
 
-async def update_sticky_prompt(db_manager, thread: discord.Thread):
-    thread_data = await db_manager.get_anon_thread_data(thread.id)
+# --- SỬA LỖI LOGIC: Truyền 'thread_data' để tránh ghi đè dữ liệu ---
+async def update_sticky_prompt(db_manager, thread: discord.Thread, thread_data: dict):
     if not thread_data: return
+    
+    # 1. Xóa tin nhắn cũ
     old_prompt_id = thread_data.get("last_prompt_message_id")
     if old_prompt_id:
         try:
             old_prompt_msg = await thread.fetch_message(old_prompt_id)
             await old_prompt_msg.delete()
-        except (discord.NotFound, discord.Forbidden): pass
+        except (discord.NotFound, discord.Forbidden):
+            pass # Bỏ qua nếu tin nhắn không tìm thấy hoặc không có quyền
+            
+    # 2. Gửi tin nhắn mới và cập nhật ID
     new_prompt_msg = await thread.send("Nhấn nút bên dưới nếu muốn trả lời ẩn danh.👇", view=PersistentReplyView())
     thread_data["last_prompt_message_id"] = new_prompt_msg.id
+    
+    # 3. Lưu lại toàn bộ dữ liệu đã cập nhật
     await db_manager.save_anon_thread_data(thread.id, thread_data)
 
-# --- SỬA LỖI VẤN ĐỀ 1: TIN NHẮN BỊ LẶP LẠI ---
+# --- SỬA LỖI LOGIC: Khôi phục và sửa lại luồng xử lý ---
 async def handle_anonymous_reply(bot, interaction: discord.Interaction, content: str, target_message: discord.Message = None):
+    # 1. Lấy dữ liệu thread
     thread_data = await bot.db.get_anon_thread_data(interaction.channel.id)
     if not thread_data: return
+
+    # 2. Cập nhật danh tính người dùng vào 'thread_data'
     anon_name, anon_color = get_anonymous_identity(str(interaction.user.id), thread_data)
+    
+    # 3. Tạo embed
     description = content
     if target_message and target_message.embeds:
         replied_embed = target_message.embeds[0]
@@ -66,14 +75,11 @@ async def handle_anonymous_reply(bot, interaction: discord.Interaction, content:
     embed = discord.Embed(description=description, color=anon_color, timestamp=datetime.now(zoneinfo.ZoneInfo("Asia/Ho_Chi_Minh")))
     embed.set_author(name=anon_name)
     
-    # Gửi tin nhắn trả lời mà không cập nhật lại sticky prompt
+    # 4. Gửi tin nhắn trả lời
     await interaction.channel.send(embed=embed, view=AnonMessageView())
     
-    # <<< THAY ĐỔI Ở ĐÂY: Xóa dòng này đi để tin nhắn không bị lặp lại
-    # await update_sticky_prompt(bot.db, interaction.channel) 
-    
-    # Vẫn lưu dữ liệu người dùng mới
-    await bot.db.save_anon_thread_data(interaction.channel.id, thread_data)
+    # 5. Gọi hàm cập nhật sticky prompt. Hàm này sẽ tự xóa cũ, tạo mới và LƯU DỮ LIỆU.
+    await update_sticky_prompt(bot.db, interaction.channel, thread_data)
 
 class ReplyModal(ui.Modal):
     reply_content = ui.TextInput(label='Nội dung trả lời', style=discord.TextStyle.long, required=True, max_length=2000)
@@ -130,8 +136,8 @@ class ConfessionModal(ui.Modal, title='Gửi Confession của bạn'):
             thread_name = f"Thảo luận CFS #{current_cfs_number}: {user_title or original_content[:50]}"
             new_thread = await sent_message.create_thread(name=thread_name, auto_archive_duration=10080)
             initial_thread_data = {"op_user_id": interaction.user.id, "users": {}, "counter": 1}
-            await self.bot.db.save_anon_thread_data(new_thread.id, initial_thread_data)
-            await update_sticky_prompt(self.bot.db, new_thread)
+            # Gọi hàm update_sticky_prompt lần đầu tiên khi tạo thread
+            await update_sticky_prompt(self.bot.db, new_thread, initial_thread_data)
             await interaction.followup.send(f'✅ Confession #{current_cfs_number} đã được gửi!', ephemeral=True)
             await self.bot.db.increment_cfs_counter()
         except Exception as e:
