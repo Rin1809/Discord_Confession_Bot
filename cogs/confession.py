@@ -12,25 +12,11 @@ PREDEFINED_COLORS = [0x3498db, 0x2ecc71, 0xf1c40f, 0xe91e63, 0x9b59b6, 0x1abc9c,
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
-    gemini_model = genai.GenerativeModel('gemini-2.5-flash')
+    gemini_model = genai.GenerativeModel('gemini-1.5-flash') # Sử dụng model mới hơn nếu có
 else:
     gemini_model = None
 
-class PersistentReplyView(ui.View):
-    def __init__(self):
-        super().__init__(timeout=None)
-
-    @ui.button(label='✍️ Trả lời ẩn danh', style=discord.ButtonStyle.green, custom_id='persistent_general_reply_button')
-    async def general_reply_button(self, interaction: discord.Interaction, button: ui.Button):
-        pass
-
-class AnonMessageView(ui.View):
-    def __init__(self):
-        super().__init__(timeout=None)
-
-    @ui.button(label='Trả lời', style=discord.ButtonStyle.secondary, custom_id='direct_reply_button')
-    async def direct_reply(self, interaction: discord.Interaction, button: ui.Button):
-        pass
+# --- CÁC HÀM TRỢ GIÚP (Không thay đổi) ---
 
 def get_anonymous_identity(user_id_str: str, thread_data: dict):
     if user_id_str == str(thread_data.get("op_user_id")): return "Chủ thớt (OP)", discord.Color.gold()
@@ -77,6 +63,8 @@ async def handle_anonymous_reply(bot, interaction: discord.Interaction, content:
     await update_sticky_prompt(bot.db, interaction.channel)
     await bot.db.save_anon_thread_data(interaction.channel.id, thread_data)
 
+# --- MODAL (Không thay đổi) ---
+
 class ReplyModal(ui.Modal):
     reply_content = ui.TextInput(label='Nội dung trả lời', style=discord.TextStyle.long, required=True, max_length=2000)
     def __init__(self, title: str, bot: commands.Bot, target_message: discord.Message = None):
@@ -96,7 +84,6 @@ class ConfessionModal(ui.Modal, title='Gửi Confession của bạn'):
         self.target_channel = target_channel
         self.bot = bot
         self.attachment = attachment
-
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True, thinking=True)
         current_cfs_number = await self.bot.db.get_cfs_counter()
@@ -110,34 +97,15 @@ class ConfessionModal(ui.Modal, title='Gửi Confession của bạn'):
             except Exception as e:
                 print(f"Loi Gemini: {e}. Dung noi dung goc.")
                 await interaction.followup.send("⚠️ Lỗi định dạng AI. Confession vẫn được gửi với nội dung gốc.", ephemeral=True)
-        
         user_title = self.title_input.value
         timestamp_str = datetime.now(zoneinfo.ZoneInfo("Asia/Ho_Chi_Minh")).strftime("%d/%m/%Y %I:%M %p")
-        
-        # Dinh nghia duong ke
         SEPARATOR_LINE = "⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯"
-
-        # Them duong ke vao noi dung neu co tieu de
         final_description = formatted_content
-        if user_title:
-            final_description = f"{SEPARATOR_LINE}\n\n{formatted_content}"
-
-        # Tao footer text
-        footer_text = (
-            f"Được gửi ẩn danh bởi Yumemi-chan\n"
-            f"{SEPARATOR_LINE}\n"
-            f"Gõ lệnh /cfs để gửi confession"
-        )
-        
-        embed = discord.Embed(
-            title=user_title or None,
-            description=final_description,
-            color=discord.Color(random.randint(0, 0xFFFFFF))
-        )
-        
+        if user_title: final_description = f"{SEPARATOR_LINE}\n\n{formatted_content}"
+        footer_text = (f"Được gửi ẩn danh bởi Yumemi-chan\n{SEPARATOR_LINE}\nGõ lệnh /cfs để gửi confession")
+        embed = discord.Embed(title=user_title or None, description=final_description, color=discord.Color(random.randint(0, 0xFFFFFF)))
         embed.set_author(name=f"Confession #{current_cfs_number} • {timestamp_str}", icon_url=interaction.guild.icon.url if interaction.guild.icon else "")
         embed.set_footer(text=footer_text, icon_url=self.bot.user.display_avatar.url)
-        
         file_to_send = None
         if self.attachment:
             if self.attachment.content_type and (self.attachment.content_type.startswith(('image/', 'video/', 'audio/'))):
@@ -160,22 +128,36 @@ class ConfessionModal(ui.Modal, title='Gửi Confession của bạn'):
             await interaction.followup.send(f"Đã có lỗi xảy ra: {e}", ephemeral=True)
             print(f"Loi chi tiet khi gui cfs: {e}")
 
+# --- PHẦN CHỈNH SỬA CHÍNH ---
+
+class PersistentReplyView(ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @ui.button(label='✍️ Trả lời ẩn danh', style=discord.ButtonStyle.green, custom_id='persistent_general_reply_button')
+    async def general_reply_button(self, interaction: discord.Interaction, button: ui.Button):
+        # Lấy bot instance từ interaction và gọi modal trực tiếp
+        modal = ReplyModal(title='Trả lời ẩn danh', bot=interaction.client)
+        await interaction.response.send_modal(modal)
+
+class AnonMessageView(ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @ui.button(label='Trả lời', style=discord.ButtonStyle.secondary, custom_id='direct_reply_button')
+    async def direct_reply(self, interaction: discord.Interaction, button: ui.Button):
+        # Tương tự, gọi modal trực tiếp từ đây
+        modal = ReplyModal(title='Trả lời trực tiếp', bot=interaction.client, target_message=interaction.message)
+        await interaction.response.send_modal(modal)
+
 class ConfessionCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        # Chỉ cần đăng ký View, không cần gán lại callback
         self.bot.add_view(PersistentReplyView())
         self.bot.add_view(AnonMessageView())
 
-        PersistentReplyView.general_reply_button.callback = self.general_reply_callback
-        AnonMessageView.direct_reply.callback = self.direct_reply_callback
-
-    async def general_reply_callback(self, interaction: discord.Interaction, button: ui.Button):
-        modal = ReplyModal(title='Trả lời ẩn danh', bot=self.bot)
-        await interaction.response.send_modal(modal)
-
-    async def direct_reply_callback(self, interaction: discord.Interaction, button: ui.Button):
-        modal = ReplyModal(title='Trả lời trực tiếp', bot=self.bot, target_message=interaction.message)
-        await interaction.response.send_modal(modal)
+    # Các hàm callback riêng đã bị xóa vì logic được chuyển vào View
 
     @app_commands.command(name="cfs", description="Gửi một confession ẩn danh")
     @app_commands.describe(attachment="(Tùy chọn) Đính kèm một tệp")
