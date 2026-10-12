@@ -10,8 +10,9 @@ load_dotenv()
 class MyBot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.default()
-        intents.members = True
-        intents.message_content = True
+        # message_content khong can thiet vi bot dung 100% slash command va modal
+        # members intent chi bat neu tren Portal duoc cap phep
+        intents.members = os.getenv('ENABLE_MEMBERS_INTENT', 'false').lower() in ('true', '1')
         super().__init__(command_prefix='!', intents=intents)
         self.db = DatabaseManager(DB_FILE)
 
